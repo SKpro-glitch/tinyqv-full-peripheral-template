@@ -63,8 +63,8 @@ module soham_kapur_multi_sensor_response_check (
                 3: begin
                     if(clk_counter==0) //At the first clock cycle, the triggers are sent
                         trig <= {32{1'b1}};
-                    else if(valid) //At each clock cycle, the echos are read
-                        below_limit <= echo;                        
+                    else if(valid) //At each clock cycle, the echos from active sensors are read
+                        below_limit <= active_sensors & echo;                        
                     else //When clock cycles upto the limit have bee counted, the data is ready
                         data_ready <= 1'b1;
 
