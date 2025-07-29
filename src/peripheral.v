@@ -24,14 +24,14 @@ module soham_kapur_multi_sensor_response_check (
     input [1:0]   data_write_n, // Mode: 00, 11 = Off; 01 = Set; 10 = Run
     input [1:0]   data_read_n,  // 11 = no read,  00 = 8-bits, 01 = 16-bits, 10 = 32-bits
     
-    // Ultrasonic Sensor interface pins
-    output [31:0] trig,
-    input  [31:0] echo,
-    
     output [31:0] data_out,           // Data out from the peripheral, all 32 bits are valid on read when user_interrupt is high.
-    output        data_ready,
+    output reg    data_ready,
     
-    output        user_interrupt      // Dedicated interrupt request for this peripheral
+    output        user_interrupt,      // Dedicated interrupt request for this peripheral
+    
+    // Ultrasonic Sensor interface pins
+    output reg [31:0] trig,
+    input      [31:0] echo
 );
 
 
@@ -41,12 +41,11 @@ module soham_kapur_multi_sensor_response_check (
 
     always @ (posedge clk) begin
         if(!rst_n) begin
-        
+            //All values except limit are reset to zero, so limit does not have to be written again
             clk_counter <= 0;
             below_limit <= 0;
             trig <= 0;
             data_ready <= 1'b0;
-        
         end
         else begin
             case(data_write_n)

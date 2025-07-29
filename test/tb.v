@@ -27,7 +27,7 @@ module tb ();
   wire VGND = 1'b0;
 `endif
 
-  tt_um_tqv_peripheral_harness test_harness (
+  soham_kapur_multi_sensor_response_check test_harness (
 
       // Include power ports for the Gate Level test:
 `ifdef GL_TEST
