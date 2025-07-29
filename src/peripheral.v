@@ -1,14 +1,13 @@
 /*
- * Copyright (c) 2025 Your Name
+ * Copyright (c) 2025 Soham Sunil Kapur
  * SPDX-License-Identifier: Apache-2.0
  */
-
-`default_nettype none
 
 // Change the name of this module to something that reflects its functionality and includes your name for uniqueness
 // For example tqvp_yourname_spi for an SPI peripheral.
 // Then edit tt_wrapper.v line 41 and change tqvp_example to your chosen module name.
-module tqvp_example (
+
+module soham_kapur_multi_sensor_response_check (
     input         clk,          // Clock - the TinyQV project clock is normally set to 64MHz.
     input         rst_n,        // Reset_n - low to reset.
 
@@ -19,64 +18,76 @@ module tqvp_example (
                                 // Note that uo_out[0] is normally used for UART TX.
 
     input [5:0]   address,      // Address within this peripheral's address space
-    input [31:0]  data_in,      // Data in to the peripheral, bottom 8, 16 or all 32 bits are valid on write.
+    input [31:0]  data_in,      // Data in to the peripheral, all 32 bits are valid on write.
 
     // Data read and write requests from the TinyQV core.
-    input [1:0]   data_write_n, // 11 = no write, 00 = 8-bits, 01 = 16-bits, 10 = 32-bits
+    input [1:0]   data_write_n, // Mode: 00, 11 = Off; 01 = Set; 10 = Run
     input [1:0]   data_read_n,  // 11 = no read,  00 = 8-bits, 01 = 16-bits, 10 = 32-bits
     
-    output [31:0] data_out,     // Data out from the peripheral, bottom 8, 16 or all 32 bits are valid on read when data_ready is high.
+    // Ultrasonic Sensor interface pins
+    output [31:0] trig,
+    input  [31:0] echo,
+    
+    output [31:0] data_out,           // Data out from the peripheral, all 32 bits are valid on read when user_interrupt is high.
     output        data_ready,
-
-    output        user_interrupt  // Dedicated interrupt request for this peripheral
+    
+    output        user_interrupt      // Dedicated interrupt request for this peripheral
 );
 
-    // Implement a 32-bit read/write register at address 0
-    reg [31:0] example_data;
-    always @(posedge clk) begin
-        if (!rst_n) begin
-            example_data <= 0;
-        end else begin
-            if (address == 6'h0) begin
-                if (data_write_n != 2'b11)              example_data[7:0]   <= data_in[7:0];
-                if (data_write_n[1] != data_write_n[0]) example_data[15:8]  <= data_in[15:8];
-                if (data_write_n == 2'b10)              example_data[31:16] <= data_in[31:16];
-            end
+
+    reg [31:0] clk_counter=0, limit=0, below_limit=0, active_sensors=0;
+    
+    wire valid = clk_counter < limit;
+
+    always @ (posedge clk) begin
+        if(!rst_n) begin
+        
+            clk_counter <= 0;
+            below_limit <= 0;
+            trig <= 0;
+            data_ready <= 1'b0;
+        
+        end
+        else begin
+            case(data_write_n)
+                //Off Mode: The device is switched off as the clock counter is fixed to zero
+                0: clk_counter <= 0;
+                
+                //Set Mode: The sesnor time limit can be set by the processor
+                1: limit <= data_in;
+                
+                //Activate Mode: Which sensors are active and which are not, must be set through a bit mask
+                2: active_sensors <= data_in;
+
+                //Run Mode: The device runs and checks the respective sensors
+                3: begin
+                    if(clk_counter==0) //At the first clock cycle, the triggers are sent
+                        trig <= {32{1'b1}};
+                    else if(valid) //At each clock cycle, the echos are read
+                        below_limit <= echo;                        
+                    else //When clock cycles upto the limit have bee counted, the data is ready
+                        data_ready <= 1'b1;
+
+                    //Clock Counter increments at each clock cycle upto the limit in run mode
+                    clk_counter <= clk_counter +  (valid ? 1 : 0);
+                end
+                
+                default: clk_counter <= 0;
+            endcase
         end
     end
+    
+    // The bottom 8 bits of the below_limit sensors are added to ui_in and output to uo_out.
+    assign uo_out = below_limit[7:0] + ui_in;
 
-    // The bottom 8 bits of the stored data are added to ui_in and output to uo_out.
-    assign uo_out = example_data[7:0] + ui_in;
-
-    // Address 0 reads the example data register.  
+    // Address 0 reads the below_limit register.  
     // Address 4 reads ui_in
     // All other addresses read 0.
-    assign data_out = (address == 6'h0) ? example_data :
+    assign data_out = (address == 6'h0) ? below_limit :
                       (address == 6'h4) ? {24'h0, ui_in} :
                       32'h0;
 
-    // All reads complete in 1 clock
-    assign data_ready = 1;
-    
-    // User interrupt is generated on rising edge of ui_in[6], and cleared by writing a 1 to the low bit of address 8.
-    reg example_interrupt;
-    reg last_ui_in_6;
-
-    always @(posedge clk) begin
-        if (!rst_n) begin
-            example_interrupt <= 0;
-        end
-
-        if (ui_in[6] && !last_ui_in_6) begin
-            example_interrupt <= 1;
-        end else if (address == 6'h8 && data_write_n != 2'b11 && data_in[0]) begin
-            example_interrupt <= 0;
-        end
-
-        last_ui_in_6 <= ui_in[6];
-    end
-
-    assign user_interrupt = example_interrupt;
+    assign user_interrupt = |below_limit;
 
     // List all unused inputs to prevent warnings
     // data_read_n is unused as none of our behaviour depends on whether
